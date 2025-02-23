@@ -1,0 +1,337 @@
+import React, { useState, useEffect } from 'react';
+
+const HebrewCalendar = () => {
+  const [events, setEvents] = useState([]);
+  const [selectedDate, setSelectedDate] = useState(new Date());
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const API_BASE_URL = 'http://localhost:5000/api';
+
+  // Fetch events from backend
+  useEffect(() => {
+    fetchEvents();
+  }, []);
+
+  const fetchEvents = async () => {
+    try {
+      setLoading(true);
+      console.log('Fetching events from:', `${API_BASE_URL}/events`);
+      
+      // Use dummy data if no backend connection
+      // This allows the calendar to work without a backend during development
+      const dummyData = [
+        { 
+          _id: '1',
+          title: "פגישה",
+          start: new Date("2024-02-20T10:00:00").toISOString(),
+          end: new Date("2024-02-20T11:00:00").toISOString()
+        },
+        {
+          _id: '2',
+          title: "כנס",
+          start: new Date("2024-02-25T14:00:00").toISOString(),
+          end: new Date("2024-02-25T15:30:00").toISOString()
+        }
+      ];
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/events`);
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+        const data = await response.json();
+        console.log('Received data:', data);
+        setEvents(data);
+      } catch (networkErr) {
+        console.warn('Backend not available, using dummy data:', networkErr);
+        setEvents(dummyData);
+      }
+      
+      setError(null);
+    } catch (err) {
+      setError('Failed to load events');
+      console.error('Error in fetchEvents:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Generate week dates
+  const getWeekDates = (date) => {
+    const week = [];
+    const start = new Date(date);
+    start.setDate(start.getDate() - start.getDay());
+    
+    for (let i = 0; i < 7; i++) {
+      const day = new Date(start);
+      day.setDate(start.getDate() + i);
+      week.push(day);
+    }
+    return week;
+  };
+
+  // Hebrew day names
+  const hebrewDays = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
+  
+  // Format time in 24-hour format
+  const formatTime = (date) => {
+    return new Date(date).toLocaleTimeString('he-IL', { 
+      hour: '2-digit', 
+      minute: '2-digit',
+      hour12: false 
+    });
+  };
+
+  // Get events for a specific date
+  const getEventsForDate = (date) => {
+    return events.filter(event => {
+      const eventDate = new Date(event.start);
+      return eventDate.toDateString() === date.toDateString();
+    });
+  };
+
+  // Add new event
+  const addEvent = async () => {
+    const title = prompt('הכנס כותרת לאירוע:');
+    if (title) {
+      const startTime = prompt('הכנס שעת התחלה (HH:MM):', '09:00');
+      const endTime = prompt('הכנס שעת סיום (HH:MM):', '10:00');
+      
+      if (startTime && endTime) {
+        const newEvent = {
+          title,
+          start: `${selectedDate.toISOString().split('T')[0]}T${startTime}:00`,
+          end: `${selectedDate.toISOString().split('T')[0]}T${endTime}:00`
+        };
+
+        try {
+          const response = await fetch(`${API_BASE_URL}/events`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(newEvent),
+          });
+
+          if (!response.ok) throw new Error('Failed to add event');
+          await fetchEvents(); // Refresh events list
+        } catch (err) {
+          setError('Failed to add event');
+          console.error('Error adding event:', err);
+        }
+      }
+    }
+  };
+
+  // Delete event
+  const deleteEvent = async (eventId) => {
+    if (window.confirm('האם אתה בטוח שברצונך למחוק אירוע זה?')) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/events/${eventId}`, {
+          method: 'DELETE',
+        });
+        
+        if (!response.ok) throw new Error('Failed to delete event');
+        await fetchEvents(); // Refresh events list
+      } catch (err) {
+        setError('Failed to delete event');
+        console.error('Error deleting event:', err);
+      }
+    }
+  };
+
+  if (loading) {
+    return <div className="text-center p-4">טוען...</div>;
+  }
+
+  return (
+    <div className="w-full max-w-4xl mx-auto p-4 rtl" dir="rtl">
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          {error}
+        </div>
+      )}
+      
+      <div className="bg-white rounded-lg shadow">
+        {/* Calendar Header */}
+        <div className="flex justify-between items-center p-4 border-b">
+          <button 
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            onClick={() => {
+              const newDate = new Date(selectedDate);
+              newDate.setDate(newDate.getDate() - 7);
+              setSelectedDate(newDate);
+            }}
+          >
+            שבוע הבא
+          </button>
+          <h2 className="text-xl font-bold">
+            {selectedDate.toLocaleDateString('he-IL', { month: 'long', year: 'numeric' })}
+          </h2>
+          <button 
+            className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
+            onClick={() => {
+              const newDate = new Date(selectedDate);
+              newDate.setDate(newDate.getDate() + 7);
+              setSelectedDate(newDate);
+            }}
+          >
+            שבוע קודם
+          </button>
+        </div>
+
+        {/* Days of Week */}
+        <div className="grid grid-cols-7 gap-2 p-4 text-center border-b">
+          {hebrewDays.map((day, index) => (
+            <div key={index} className="font-semibold">
+              {day}
+            </div>
+          ))}
+        </div>
+
+        {/* Calendar Grid */}
+        <div className="grid grid-cols-7 gap-2 p-4">
+          {getWeekDates(selectedDate).map((date, index) => (
+            <div 
+              key={index} 
+              className="min-h-32 border rounded p-2 hover:bg-gray-50"
+              onClick={() => setSelectedDate(date)}
+            >
+              <div className="text-right mb-2">
+                {date.getDate()}
+              </div>
+              <div className="space-y-1">
+                {getEventsForDate(date).map((event) => (
+                  <div 
+                    key={event._id}
+                    className="bg-blue-100 p-1 rounded text-sm group relative"
+                  >
+                    <div className="font-semibold">{event.title}</div>
+                    <div className="text-xs">
+                      {formatTime(event.start)} - {formatTime(event.end)}
+                    </div>
+                    <button
+                      className="absolute top-0 left-0 opacity-0 group-hover:opacity-100 bg-red-500 text-white rounded-full w-5 h-5 flex items-center justify-center text-xs"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteEvent(event._id);
+                      }}
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Add Event Button */}
+        <div className="p-4 border-t">
+          <button 
+            className="w-full px-4 py-2 bg-green-500 text-white rounded hover:bg-green-600"
+            onClick={addEvent}
+          >
+            הוסף אירוע
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default HebrewCalendar;
+
+
+
+
+
+// backend/server.js
+const express = require('express');
+const mongoose = require('mongoose');
+const cors = require('cors');
+const dotenv = require('dotenv');
+
+dotenv.config();
+
+const app = express();
+
+// Middleware
+app.use(cors());
+app.use(express.json());
+
+// MongoDB Connection
+mongoose.connect(process.env.MONGODB_URI || 'mongodb://localhost:27017/calendar_db', {
+  useNewUrlParser: true,
+  useUnifiedTopology: true,
+});
+
+// Event Schema
+const eventSchema = new mongoose.Schema({
+  title: { type: String, required: true },
+  start: { type: Date, required: true },
+  end: { type: Date, required: true },
+});
+
+const Event = mongoose.model('Event', eventSchema);
+
+// Routes
+app.get('/api/events', async (req, res) => {
+  try {
+    const events = await Event.find();
+    res.json(events);
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+app.post('/api/events', async (req, res) => {
+  const event = new Event({
+    title: req.body.title,
+    start: new Date(req.body.start),
+    end: new Date(req.body.end),
+  });
+
+  try {
+    const newEvent = await event.save();
+    res.status(201).json(newEvent);
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+app.put('/api/events/:id', async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.id);
+    if (event) {
+      event.title = req.body.title || event.title;
+      event.start = req.body.start ? new Date(req.body.start) : event.start;
+      event.end = req.body.end ? new Date(req.body.end) : event.end;
+      
+      const updatedEvent = await event.save();
+      res.json(updatedEvent);
+    } else {
+      res.status(404).json({ message: 'Event not found' });
+    }
+  } catch (error) {
+    res.status(400).json({ message: error.message });
+  }
+});
+
+app.delete('/api/events/:id', async (req, res) => {
+  try {
+    const event = await Event.findById(req.params.id);
+    if (event) {
+      await event.remove();
+      res.json({ message: 'Event deleted' });
+    } else {
+      res.status(404).json({ message: 'Event not found' });
+    }
+  } catch (error) {
+    res.status(500).json({ message: error.message });
+  }
+});
+
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
+});
