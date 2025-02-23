@@ -1,110 +1,3 @@
-// server/server.js
-const express = require('express');
-const cors = require('cors');
-const sqlite3 = require('sqlite3').verbose();
-const path = require('path');
-
-const app = express();
-
-// Middleware
-app.use(cors());
-app.use(express.json());
-
-// Connect to SQLite database
-const db = new sqlite3.Database(path.join(__dirname, 'calendar.db'), (err) => {
-  if (err) {
-    console.error('❌ Database Connection Error:', err);
-  } else {
-    console.log('✅ Connected to SQLite database');
-  }
-});
-
-// Create events table if it doesn't exist
-db.run(`
-  CREATE TABLE IF NOT EXISTS events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    title TEXT NOT NULL,
-    start DATETIME NOT NULL,
-    end DATETIME NOT NULL
-  )
-`, (err) => {
-  if (err) {
-    console.error('Error creating table:', err);
-  } else {
-    console.log('✅ Events table ready');
-  }
-});
-
-// Routes
-app.get('/api/events', (req, res) => {
-  db.all('SELECT * FROM events', [], (err, rows) => {
-    if (err) {
-      res.status(500).json({ error: err.message });
-      return;
-    }
-    res.json(rows);
-  });
-});
-
-app.post('/api/events', (req, res) => {
-  const { title, start, end } = req.body;
-  
-  db.run(
-    'INSERT INTO events (title, start, end) VALUES (?, ?, ?)',
-    [title, start, end],
-    function(err) {
-      if (err) {
-        res.status(400).json({ error: err.message });
-        return;
-      }
-      
-      // Return the newly created event with its ID
-      db.get(
-        'SELECT * FROM events WHERE id = ?',
-        [this.lastID],
-        (err, row) => {
-          if (err) {
-            res.status(500).json({ error: err.message });
-            return;
-          }
-          res.status(201).json(row);
-        }
-      );
-    }
-  );
-});
-
-app.delete('/api/events/:id', (req, res) => {
-  db.run(
-    'DELETE FROM events WHERE id = ?',
-    [req.params.id],
-    (err) => {
-      if (err) {
-        res.status(400).json({ error: err.message });
-        return;
-      }
-      res.json({ message: 'Event deleted' });
-    }
-  );
-});
-
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-  console.log(`
-🚀 Server is running on port ${PORT}
-📌 API endpoints:
-   - GET    http://localhost:${PORT}/api/events     (Get all events)
-   - POST   http://localhost:${PORT}/api/events     (Create new event)
-   - DELETE http://localhost:${PORT}/api/events/:id (Delete event)
-  `);
-});
-
-
-
-
-
-
-
 import React, { useState, useEffect } from 'react';
 
 const HebrewCalendar = () => {
@@ -123,21 +16,139 @@ const HebrewCalendar = () => {
   const fetchEvents = async () => {
     try {
       setLoading(true);
-      console.log('Fetching events from:', `${API_BASE_URL}/events`);
+      console.log('Attempting to fetch events...');
       
+      // Add initial sample data if no events exist
+      const dummyData = [
+        { 
+          id: '1',
+          title: "פגישה",
+          start: new Date("2024-02-20T10:00:00").toISOString(),
+          end: new Date("2024-02-20T11:00:00").toISOString()
+        },
+        {
+          id: '2',
+          title: "כנס",
+          start: new Date("2024-02-25T14:00:00").toISOString(),
+          end: new Date("2024-02-25T15:30:00").toISOString()
+        }
+      ];
+
+      // Try to fetch from backend
       const response = await fetch(`${API_BASE_URL}/events`);
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      console.log('Response status:', response.status);
+      
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      
       const data = await response.json();
-      console.log('Received events:', data);
-      setEvents(data);
+      console.log('Received data:', data);
+      
+      // Use received data if available, otherwise use dummy data
+      setEvents(data.length > 0 ? data : dummyData);
       setError(null);
+      
     } catch (err) {
-      console.error('Error fetching events:', err);
-      setError('Failed to load events');
-      // Use empty array instead of dummy data when real backend fails
-      setEvents([]);
+      console.error('Error details:', err);
+      setError(`שגיאה בטעינת אירועים: ${err.message}`);
+      console.log('Using dummy data due to error');
+      // Set dummy data on error
+      const today = new Date();
+      setEvents([
+        { 
+          id: '1',
+          title: "פגישה",
+          start: new Date(today.setHours(10, 0, 0)).toISOString(),
+          end: new Date(today.setHours(11, 0, 0)).toISOString()
+        }
+      ]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Add new event
+  const addEvent = async () => {
+    const title = prompt('הכנס כותרת לאירוע:');
+    if (title) {
+      const startTime = prompt('הכנס שעת התחלה (HH:MM):', '09:00');
+      const endTime = prompt('הכנס שעת סיום (HH:MM):', '10:00');
+      
+      if (startTime && endTime) {
+        const newEvent = {
+          title,
+          start: `${selectedDate.toISOString().split('T')[0]}T${startTime}:00`,
+          end: `${selectedDate.toISOString().split('T')[0]}T${endTime}:00`
+        };
+
+        try {
+          console.log('Attempting to add event:', newEvent);
+          const response = await fetch(`${API_BASE_URL}/events`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(newEvent),
+          });
+
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+
+          const addedEvent = await response.json();
+          console.log('Successfully added event:', addedEvent);
+          
+          setEvents(prevEvents => [...prevEvents, addedEvent]);
+        } catch (err) {
+          console.error('Error adding event:', err);
+          setError('שגיאה בהוספת אירוע');
+        }
+      }
+    }
+  };
+
+  // Delete event
+  const deleteEvent = async (eventId) => {
+    if (window.confirm('האם אתה בטוח שברצונך למחוק אירוע זה?')) {
+      try {
+        console.log('Attempting to delete event:', eventId);
+        const response = await fetch(`${API_BASE_URL}/events/${eventId}`, {
+          method: 'DELETE',
+        });
+        
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        console.log('Successfully deleted event:', eventId);
+        setEvents(prevEvents => prevEvents.filter(event => event.id !== eventId));
+      } catch (err) {
+        console.error('Error deleting event:', err);
+        setError('שגיאה במחיקת אירוע');
+      }
+    }
+  };
+
+  // Get events for a specific date
+  const getEventsForDate = (date) => {
+    return events.filter(event => {
+      const eventDate = new Date(event.start);
+      return eventDate.toDateString() === date.toDateString();
+    });
+  };
+
+  // Format time in 24-hour format
+  const formatTime = (date) => {
+    try {
+      return new Date(date).toLocaleTimeString('he-IL', { 
+        hour: '2-digit', 
+        minute: '2-digit',
+        hour12: false 
+      });
+    } catch (err) {
+      console.error('Error formatting time:', err);
+      return '00:00';
     }
   };
 
@@ -157,73 +168,6 @@ const HebrewCalendar = () => {
 
   // Hebrew day names
   const hebrewDays = ['ראשון', 'שני', 'שלישי', 'רביעי', 'חמישי', 'שישי', 'שבת'];
-  
-  // Format time in 24-hour format
-  const formatTime = (date) => {
-    return new Date(date).toLocaleTimeString('he-IL', { 
-      hour: '2-digit', 
-      minute: '2-digit',
-      hour12: false 
-    });
-  };
-
-  // Get events for a specific date
-  const getEventsForDate = (date) => {
-    return events.filter(event => {
-      const eventDate = new Date(event.start);
-      return eventDate.toDateString() === date.toDateString();
-    });
-  };
-
-  // Add new event
-  const addEvent = async () => {
-    const title = prompt('הכנס כותרת לאירוע:');
-    if (title) {
-      const startTime = prompt('הכנס שעת התחלה (HH:MM):', '09:00');
-      const endTime = prompt('הכנס שעת סיום (HH:MM):', '10:00');
-      
-      if (startTime && endTime) {
-        const newEvent = {
-          title,
-          start: `${selectedDate.toISOString().split('T')[0]}T${startTime}:00`,
-          end: `${selectedDate.toISOString().split('T')[0]}T${endTime}:00`
-        };
-
-        try {
-          const response = await fetch(`${API_BASE_URL}/events`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(newEvent),
-          });
-
-          if (!response.ok) throw new Error('Failed to add event');
-          await fetchEvents(); // Refresh events list
-        } catch (err) {
-          setError('Failed to add event');
-          console.error('Error adding event:', err);
-        }
-      }
-    }
-  };
-
-  // Delete event
-  const deleteEvent = async (eventId) => {
-    if (window.confirm('האם אתה בטוח שברצונך למחוק אירוע זה?')) {
-      try {
-        const response = await fetch(`${API_BASE_URL}/events/${eventId}`, {
-          method: 'DELETE',
-        });
-        
-        if (!response.ok) throw new Error('Failed to delete event');
-        await fetchEvents(); // Refresh events list
-      } catch (err) {
-        setError('Failed to delete event');
-        console.error('Error deleting event:', err);
-      }
-    }
-  };
 
   if (loading) {
     return <div className="text-center p-4">טוען...</div>;
@@ -232,8 +176,14 @@ const HebrewCalendar = () => {
   return (
     <div className="w-full max-w-4xl mx-auto p-4 rtl" dir="rtl">
       {error && (
-        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4 relative">
           {error}
+          <button 
+            className="absolute top-0 right-0 p-2"
+            onClick={() => setError(null)}
+          >
+            ×
+          </button>
         </div>
       )}
       
